@@ -1,0 +1,43 @@
+## Build / .NET
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]uild/
+
+## Visual Studio / VS Code / Rider
+.vs/
+.idea/
+*.user
+*.userosscache
+*.suo
+*.rsuser
+
+## NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+## Config locale (secrets, chaînes de connexion)
+**/appsettings.json
+**/appsettings.*.json
+!**/appsettings.example.json
+
+## Données / exports locaux (racine du dépôt)
+/Tbl_*.txt
+/Tbl_Log.txt
+
+## OS / divers
+.DS_Store
+Thumbs.db
+*.tmp
+.env
+.env.*
