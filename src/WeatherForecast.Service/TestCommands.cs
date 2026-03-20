@@ -86,7 +86,7 @@ public static class TestCommands
 
                 var dicoId = WmoCodeMapper.GetMeteoDicoId(weather.WeatherCode);
 
-                await db.InsertMeteoAsync(loc, weather.Temperature, weather.Precipitation, dicoId, CancellationToken.None);
+                await db.InsertMeteoAsync(loc, weather.Temperature, weather.Precipitation, dicoId, DateOnly.FromDateTime(DateTime.Today), CancellationToken.None);
 
                 await db.WriteLogAsync("R", "Requête",
                     $"INSERT Tbl_Meteo: {loc.Ville} ({loc.Loc}) — {weather.Temperature}°C, precip={weather.Precipitation}, WMO={weather.WeatherCode}→Dico={dicoId}",

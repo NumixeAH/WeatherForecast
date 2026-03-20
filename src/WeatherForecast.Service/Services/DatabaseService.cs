@@ -65,10 +65,9 @@ public class DatabaseService
 
     public async Task InsertMeteoAsync(
         MeteoLocation location, decimal temperature, decimal precipitation,
-        int meteoDicoId, CancellationToken ct)
+        int meteoDicoId, DateOnly date, CancellationToken ct)
     {
         var now = DateTime.Now;
-        var today = now.Date;
 
         await using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct);
@@ -82,7 +81,7 @@ public class DatabaseService
                 (@date, @temp, @pays, @precip, @loc, @ville, @dicoId, @stampCrea, @stampModi)
             """, conn);
 
-        cmd.Parameters.AddWithValue("@date", today);
+        cmd.Parameters.AddWithValue("@date", date.ToDateTime(TimeOnly.MinValue));
         cmd.Parameters.AddWithValue("@temp", temperature);
         cmd.Parameters.AddWithValue("@pays", location.Pays);
         cmd.Parameters.AddWithValue("@precip", precipitation);
@@ -93,6 +92,37 @@ public class DatabaseService
         cmd.Parameters.AddWithValue("@stampModi", now);
 
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// Returns the set of dates that already have weather data for a given location
+    /// within the specified range. Used by the backfill logic to avoid duplicate inserts.
+    /// </summary>
+    public async Task<HashSet<DateOnly>> GetExistingDatesForLocationAsync(
+        string loc, DateOnly from, DateOnly to, CancellationToken ct)
+    {
+        var result = new HashSet<DateOnly>();
+
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+
+        await using var cmd = new SqlCommand(
+            """
+            SELECT DISTINCT CAST(Meteo_Date AS DATE)
+            FROM Tbl_Meteo
+            WHERE Meteo_Loc = @loc
+              AND CAST(Meteo_Date AS DATE) BETWEEN @from AND @to
+            """, conn);
+
+        cmd.Parameters.AddWithValue("@loc", loc);
+        cmd.Parameters.AddWithValue("@from", from.ToDateTime(TimeOnly.MinValue));
+        cmd.Parameters.AddWithValue("@to",   to.ToDateTime(TimeOnly.MinValue));
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            result.Add(DateOnly.FromDateTime(reader.GetDateTime(0)));
+
+        return result;
     }
 
     public async Task WriteLogAsync(
