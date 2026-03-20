@@ -13,6 +13,10 @@ x86/
 bld/
 [Bb]uild/
 
+## Publish output
+publish/
+.publish/
+
 ## Visual Studio / VS Code / Rider
 .vs/
 .idea/
