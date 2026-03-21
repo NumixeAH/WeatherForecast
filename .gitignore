@@ -38,6 +38,7 @@ publish/
 ## Données / exports locaux (racine du dépôt)
 /Tbl_*.txt
 /Tbl_Log.txt
+/*.zip
 
 ## OS / divers
 .DS_Store

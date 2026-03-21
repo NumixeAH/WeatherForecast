@@ -1,0 +1,46 @@
+
+#L'exécutable gère lui-même l'installation/désinstallation du service.
+
+```cmd
+:: Ouvrir une invite de commande en ADMINISTRATEUR
+
+:: Installer
+C:\chemin\publish\WeatherForecast.Service.exe --install
+
+:: Démarrer
+sc start WeatherForecastService
+
+:: Vérifier le statut
+sc query WeatherForecastService
+```
+
+## Commandes utilitaires (CLI)
+
+L'exécutable intègre des commandes de diagnostic :
+
+| Commande | Description |
+|---|---|
+| `--help` | Affiche l'aide |
+| `--install` | Installe le service Windows (admin requis) |
+| `--uninstall` | Désinstalle le service Windows (admin requis) |
+| `--test-db` | Teste la connexion à la base de données 
+
+
+# Configuration
+
+Le fichier `appsettings.json` contient toute la configuration :
+
+```json
+{
+  "ConnectionStrings": {
+    "MeteoDb": "Data Source=...;Initial Catalog=PhM_Meteo;..."
+  },
+  "WeatherService": {
+    "ScheduleHour": 15,
+    "ScheduleMinute": 0,
+    "OpenMeteoBaseUrl": "https://api.open-meteo.com/v1/forecast",
+    "OpenMeteoArchiveBaseUrl": "https://archive-api.open-meteo.com/v1/archive",
+    "BackfillFromDate": null
+  }
+}
+```
