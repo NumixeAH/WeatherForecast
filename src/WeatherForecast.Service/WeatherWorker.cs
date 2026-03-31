@@ -9,6 +9,7 @@ public class WeatherWorker : BackgroundService
     private readonly int _scheduleHour;
     private readonly int _scheduleMinute;
     private readonly DateOnly? _backfillFromDate;
+    private readonly string _diagnosticLogPath;
 
     public WeatherWorker(ILogger<WeatherWorker> logger, IServiceProvider services, IConfiguration config)
     {
@@ -22,38 +23,63 @@ public class WeatherWorker : BackgroundService
                             && DateOnly.TryParseExact(raw, "yyyy-MM-dd", out var parsed)
             ? parsed
             : null;
+
+        var logsDir = Path.Combine(AppContext.BaseDirectory, "logs");
+        Directory.CreateDirectory(logsDir);
+        _diagnosticLogPath = Path.Combine(logsDir, "startup-diagnostics.log");
+        TraceDiagnostic(
+            $"Worker constructed. BaseDir={AppContext.BaseDirectory}; Schedule={_scheduleHour:D2}:{_scheduleMinute:D2}; BackfillFromDateRaw='{raw ?? "null"}'; Parsed='{_backfillFromDate?.ToString("yyyy-MM-dd") ?? "null"}'");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation(
-            "WeatherForecast Service started. Scheduled daily at {Hour:D2}:{Minute:D2}",
-            _scheduleHour, _scheduleMinute);
-
-        if (_backfillFromDate.HasValue)
-            await RunBackfillAsync(_backfillFromDate.Value, stoppingToken);
-
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            var now = DateTime.Now;
-            var nextRun = now.Date.AddHours(_scheduleHour).AddMinutes(_scheduleMinute);
+            _logger.LogInformation(
+                "WeatherForecast Service started. Scheduled daily at {Hour:D2}:{Minute:D2}",
+                _scheduleHour, _scheduleMinute);
+            TraceDiagnostic("ExecuteAsync started.");
 
-            if (nextRun <= now)
-                nextRun = nextRun.AddDays(1);
-
-            var delay = nextRun - now;
-            _logger.LogInformation("Next weather fetch scheduled at {NextRun:G} (in {Delay})", nextRun, delay);
-
-            try
+            if (_backfillFromDate.HasValue)
             {
-                await Task.Delay(delay, stoppingToken);
+                TraceDiagnostic($"Backfill enabled. Starting from {_backfillFromDate.Value:yyyy-MM-dd}.");
+                await RunBackfillAsync(_backfillFromDate.Value, stoppingToken);
+                TraceDiagnostic("Backfill finished.");
             }
-            catch (OperationCanceledException)
+            else
             {
-                break;
+                TraceDiagnostic("Backfill disabled (BackfillFromDate is null/invalid).");
             }
 
-            await RunWeatherFetchAsync(stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                var now = DateTime.Now;
+                var nextRun = now.Date.AddHours(_scheduleHour).AddMinutes(_scheduleMinute);
+
+                if (nextRun <= now)
+                    nextRun = nextRun.AddDays(1);
+
+                var delay = nextRun - now;
+                _logger.LogInformation("Next weather fetch scheduled at {NextRun:G} (in {Delay})", nextRun, delay);
+                TraceDiagnostic($"Next daily run at {nextRun:yyyy-MM-dd HH:mm:ss} (delay {delay}).");
+
+                try
+                {
+                    await Task.Delay(delay, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    TraceDiagnostic("ExecuteAsync cancellation requested during delay.");
+                    break;
+                }
+
+                await RunWeatherFetchAsync(stoppingToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            TraceDiagnostic($"ExecuteAsync fatal exception: {ex}");
+            throw;
         }
     }
 
@@ -147,17 +173,20 @@ public class WeatherWorker : BackgroundService
     private async Task RunBackfillAsync(DateOnly fromDate, CancellationToken ct)
     {
         var yesterday = DateOnly.FromDateTime(DateTime.Today.AddDays(-1));
+        TraceDiagnostic($"RunBackfillAsync entered. fromDate={fromDate:yyyy-MM-dd}, yesterday={yesterday:yyyy-MM-dd}");
 
         if (fromDate > yesterday)
         {
             _logger.LogInformation(
                 "BackfillFromDate ({Date}) is today or in the future — nothing to backfill.", fromDate);
+            TraceDiagnostic($"Backfill skipped: fromDate is in future ({fromDate:yyyy-MM-dd} > {yesterday:yyyy-MM-dd}).");
             return;
         }
 
         int totalDays = yesterday.DayNumber - fromDate.DayNumber + 1;
         _logger.LogInformation(
             "Backfill requested from {From} to {To} ({Days} days).", fromDate, yesterday, totalDays);
+        TraceDiagnostic($"Backfill requested. Range={fromDate:yyyy-MM-dd}..{yesterday:yyyy-MM-dd}, totalDays={totalDays}");
 
         using var scope = _services.CreateScope();
         var db          = scope.ServiceProvider.GetRequiredService<DatabaseService>();
@@ -167,6 +196,7 @@ public class WeatherWorker : BackgroundService
             $"Récupération historique Open-Meteo de {fromDate} à {yesterday} ({totalDays} jours)", 0, ct);
 
         var locations = await db.GetActiveLocationsAsync(ct);
+        TraceDiagnostic($"Backfill loaded {locations.Count} active locations.");
 
         int totalInserted = 0;
         int totalSkipped  = 0;
@@ -237,5 +267,19 @@ public class WeatherWorker : BackgroundService
         var summary = $"Backfill terminé: {totalInserted} jour(s) insérés, {totalSkipped} déjà présents, {locations.Count} emplacement(s).";
         _logger.LogInformation(summary);
         await db.WriteLogAsync(" ", "Fin Backfill", summary, totalInserted, ct);
+        TraceDiagnostic(summary);
+    }
+
+    private void TraceDiagnostic(string message)
+    {
+        try
+        {
+            var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} | PID={Environment.ProcessId} | {message}{Environment.NewLine}";
+            File.AppendAllText(_diagnosticLogPath, line);
+        }
+        catch
+        {
+            // Keep diagnostics best-effort only.
+        }
     }
 }
